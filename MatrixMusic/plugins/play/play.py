@@ -728,7 +728,8 @@ async def check_subscription_play(client, CallbackQuery):
         await CallbackQuery.message.delete()
         # إعادة إرسال الأمر الأصلي
         message = CallbackQuery.message
-        message.text = "/play"
+        message.text = "شغل"
         await play_commnd(client, message, get_string("ar"), None, None, None, None, None, None)
     else:
+
         await CallbackQuery.answer("لم تشترك بعد في القناة. اشترك ثم اضغط على الزر مرة أخرى.", show_alert=True)
