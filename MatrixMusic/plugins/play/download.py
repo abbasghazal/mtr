@@ -29,37 +29,101 @@ def format_size(size_bytes):
     s = round(size_bytes / p, 2)
     return f"{s} {size_names[i]}"
 
-def cookie_txt_file():
+def get_cookies_file():
+    """الحصول على ملف الكوكيز من مجلد cookies"""
     try:
-        folder_path = f"{os.getcwd()}/cookies"
-        filename = f"{os.getcwd()}/cookies/logs.csv"
+        cookies_dir = os.path.join(os.getcwd(), "cookies")
+        cookies_file = os.path.join(cookies_dir, "cookies.txt")
         
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
+        # إنشاء مجلد cookies إذا لم يكن موجوداً
+        if not os.path.exists(cookies_dir):
+            os.makedirs(cookies_dir)
+            print("📁 تم إنشاء مجلد cookies")
             return None
         
-        txt_files = glob.glob(os.path.join(folder_path, '*.txt'))
-        if not txt_files:
-            print("⚠️ No .txt files found in cookies folder")
+        # التحقق من وجود ملف cookies.txt
+        if os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 0:
+            print("✅ تم العثور على ملف الكوكيات")
+            return cookies_file
+        else:
+            print("⚠️ ملف الكوكيات غير موجود أو فارغ")
             return None
-        
-        cookie_txt_file = random.choice(txt_files)
-        
-        # سجل الملف المستخدم فقط إذا كان المسار موجوداً
-        if os.path.exists(filename):
-            with open(filename, 'a') as file:
-                file.write(f'Choosen File : {cookie_txt_file}\n')
-        
-        return f"cookies/{os.path.basename(cookie_txt_file)}"
-    
+            
     except Exception as e:
-        print(f"Cookie file error: {e}")
+        print(f"❌ خطأ في الحصول على الكوكيات: {e}")
+        return None
+
+async def search_with_cookies(query):
+    """الببحث باستخدام الكوكيز للحصول على نتائج مخصصة"""
+    try:
+        cookies_file = get_cookies_file()
+        
+        if cookies_file:
+            print("🔐 جاري البحث باستخدام الكوكيات...")
+            
+            # استخدام yt-dlp للبحث مع الكوكيز
+            ydl_opts = {
+                'cookiefile': cookies_file,
+                'quiet': True,
+                'proxy': '',
+                'extract_flat': True,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # البحث باستخدام yt-dlp مع الكوكيز
+                search_results = ydl.extract_info(
+                    f"ytsearch1:{query}",
+                    download=False
+                )
+                
+                if search_results and 'entries' in search_results and search_results['entries']:
+                    video = search_results['entries'][0]
+                    return {
+                        'title': video.get('title', ''),
+                        'link': video.get('url', ''),
+                        'duration': video.get('duration', 0),
+                        'thumbnail': video.get('thumbnail', '')
+                    }
+        
+        # إذا فشل البحث بالكوكيز أو لم توجد كوكيز، استخدم الطريقة العادية
+        print("🔍 جاري البحث بدون كوكيات...")
+        videos_search = VideosSearch(query, limit=1)
+        results = videos_search.result()
+        
+        if results and results['result']:
+            result = results['result'][0]
+            return {
+                'title': result.get("title", ""),
+                'link': result.get("link", ""),
+                'duration': result.get("duration", "0:00"),
+                'thumbnail': result.get("thumbnails", [{}])[0].get("url", "")
+            }
+        
+        return None
+        
+    except Exception as e:
+        print(f"❌ خطأ في البحث بالكوكيات: {e}")
+        # Fallback to normal search
+        try:
+            videos_search = VideosSearch(query, limit=1)
+            results = videos_search.result()
+            if results and results['result']:
+                result = results['result'][0]
+                return {
+                    'title': result.get("title", ""),
+                    'link': result.get("link", ""),
+                    'duration': result.get("duration", "0:00"),
+                    'thumbnail': result.get("thumbnails", [{}])[0].get("url", "")
+                }
+        except:
+            pass
         return None
 
 async def check_file_size(link):
+    """التحقق من حجم الملف باستخدام الكوكيز"""
     async def get_format_info(link):
         try:
-            cookies_file = cookie_txt_file() or ""
+            cookies_file = get_cookies_file()
             cmd = ["yt-dlp", "-J", link]
             if cookies_file:
                 cmd.extend(["--cookies", cookies_file])
@@ -99,28 +163,10 @@ async def check_file_size(link):
     total_size = parse_size(formats)
     return total_size
 
-async def shell_cmd(cmd):
-    try:
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        out, errorz = await proc.communicate()
-        if errorz:
-            error_msg = errorz.decode("utf-8")
-            if "unavailable videos are hidden" in error_msg.lower():
-                return out.decode("utf-8")
-            else:
-                return error_msg
-        return out.decode("utf-8")
-    except Exception as e:
-        return f"Command error: {str(e)}"
-
 async def download_audio_with_progress(link, title, message, m):
-    """تحميل الصوت بسرعة مع عرض التقدم"""
+    """تحميل الصوت باستخدام الكوكيز"""
     try:
-        cookies_file = cookie_txt_file() or ""
+        cookies_file = get_cookies_file()
         output_template = f"{title}.%(ext)s"
 
         ydl_opts = {
@@ -129,18 +175,17 @@ async def download_audio_with_progress(link, title, message, m):
             'quiet': False,
             'no_warnings': False,
             'cookiefile': cookies_file if cookies_file else None,
+            'proxy': '',
             'concurrent_fragment_downloads': 8,
             'http_chunk_size': 10485760,
             'progress_hooks': [lambda d: progress_hook(d, message, m)],
-            # إضافة هذا السطر لمنع مشكلة proxies
-            'proxy': ''
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(link, download=True)
             audio_file = ydl.prepare_filename(info)
 
-        # إذا الملف طلع m4a → حوله mp3 بجودة عالية
+        # تحويل إلى mp3 إذا كان m4a
         final_file = f"{title}.mp3"
         if audio_file.endswith(".m4a"):
             os.system(f'ffmpeg -i "{audio_file}" -vn -ab 320k -ar 44100 -y "{final_file}"')
@@ -161,7 +206,7 @@ last_update_time = 0
 last_update_percent = 0  
 
 def progress_hook(d, message, m):
-    """عرض تقدم التحميل مع Rate Limit محسّن"""
+    """عرض تقدم التحميل"""
     global last_update_time, last_update_percent
     if d['status'] == 'downloading':
         try:
@@ -185,7 +230,6 @@ def progress_hook(d, message, m):
                 import time
                 now = time.time()
 
-                # حدث إذا مرّ 10 ثواني أو زاد التقدم 5% 
                 if (now - last_update_time >= 10) or (percentage - last_update_percent >= 5):
                     last_update_time = now
                     last_update_percent = percentage
@@ -195,7 +239,7 @@ def progress_hook(d, message, m):
             print(f"Progress hook error: {e}")
 
 async def update_progress_message(m, progress_msg):
-    """تحديث رسالة التقدم مع تجنب التحميل الزائد"""
+    """تحديث رسالة التقدم"""
     try:
         await m.edit(progress_msg)
         await asyncio.sleep(5)
@@ -203,7 +247,7 @@ async def update_progress_message(m, progress_msg):
         print(f"Update progress error: {e}")
 
 async def split_large_audio(audio_file, max_size=950*1024*1024):
-    """تقسيم الملفات الكبيرة إلى أجزاء"""
+    """تقسيم الملفات الكبيرة"""
     try:
         file_size = os.path.getsize(audio_file)
         if file_size <= max_size:
@@ -234,6 +278,20 @@ async def split_large_audio(audio_file, max_size=950*1024*1024):
         print(f"Split audio error: {e}")
         return [audio_file]
 
+def format_duration(seconds):
+    """تنسيق المدة من الثواني إلى تنسيق قابل للقراءة"""
+    if isinstance(seconds, str):
+        return seconds
+        
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    seconds = seconds % 60
+    
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    else:
+        return f"{minutes}:{seconds:02d}"
+
 @app.on_message(command(["يوت", "نزل", "بحث"]))
 async def song_downloader(client, message: Message):
     if len(message.command) < 2:
@@ -244,49 +302,18 @@ async def song_downloader(client, message: Message):
     m = await message.reply_text("<b>⇜ جـارِ البحث ..</b>")
 
     try:
-        # البحث بطريقة بديلة إذا فشلت الطريقة العادية
-        try:
-            videos_search = VideosSearch(query, limit=1)
-            results = videos_search.result()
-            
-            if not results or not results['result']:
-                await m.edit("⚠️ ماكو نتائج للبحث")
-                return
+        # البحث باستخدام الكوكيز
+        video_info = await search_with_cookies(query)
+        
+        if not video_info:
+            await m.edit("⚠️ ماكو نتائج للبحث")
+            return
 
-            result = results['result'][0]
-            title_raw = result["title"]
-            title = re.sub(r'[\\/*?:"<>|]', "", title_raw)[:40]
-            link = result["link"]
-            thumbnail = result["thumbnails"][0]["url"]
-            duration = result.get("duration", "0:00")
-            
-        except Exception as search_error:
-            print(f"Search error: {search_error}")
-            # طريقة بديلة للبحث
-            search_url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            
-            response = requests.get(search_url, headers=headers, timeout=10)
-            if response.status_code != 200:
-                await m.edit("⚠️ فشل في البحث")
-                return
-            
-            video_ids = re.findall(r'watch\?v=(\S{11})', response.text)
-            if not video_ids:
-                await m.edit("⚠️ ماكو نتائج للبحث")
-                return
-            
-            link = f"https://www.youtube.com/watch?v={video_ids[0]}"
-            
-            # الحصول على معلومات الفيديو
-            ydl_opts = {'quiet': True, 'proxy': ''}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(link, download=False)
-                title = re.sub(r'[\\/*?:"<>|]', "", info.get('title', 'Unknown'))[:40]
-                thumbnail = info.get('thumbnail', '')
-                duration = info.get('duration', 0)
+        title_raw = video_info["title"]
+        title = re.sub(r'[\\/*?:"<>|]', "", title_raw)[:40]
+        link = video_info["link"]
+        thumbnail = video_info["thumbnail"]
+        duration = video_info["duration"]
 
         # التحقق من الحجم
         file_size = await check_file_size(link)
@@ -318,8 +345,6 @@ async def song_downloader(client, message: Message):
     # التحقق من حجم الملف المحمل
     try:
         file_size = os.path.getsize(audio_file)
-        file_size_mb = file_size / (1024 * 1024)
-        
         audio_files = await split_large_audio(audio_file)
         
     except Exception as e:
@@ -328,25 +353,32 @@ async def song_downloader(client, message: Message):
 
     # حساب المدة
     try:
-        dur = 0
-        if duration and ":" in str(duration):
-            if isinstance(duration, str):
-                dur_arr = duration.split(":")
-                secmul = 1
-                for i in range(len(dur_arr) - 1, -1, -1):
-                    dur += int(float(dur_arr[i])) * secmul
-                    secmul *= 60
+        if isinstance(duration, int):
+            dur = duration
+        elif ":" in str(duration):
+            dur_parts = str(duration).split(":")
+            if len(dur_parts) == 3:
+                dur = int(dur_parts[0]) * 3600 + int(dur_parts[1]) * 60 + int(dur_parts[2])
+            elif len(dur_parts) == 2:
+                dur = int(dur_parts[0]) * 60 + int(dur_parts[1])
             else:
-                dur = int(duration)
+                dur = 0
+        else:
+            dur = int(duration)
     except:
         dur = 0
 
     # إرسال الملف/الملفات
     try:
+        cookies_status = "🔐" if get_cookies_file() else "🔓"
+        
         if len(audio_files) == 1:
             await message.reply_audio(
                 audio=audio_files[0],
-                caption=f"ᏟᎻᎪΝΝᎬᏞ 𓏺 @{config.CH_US}\n▰ <b>الحجم:</b> {format_size(file_size)}",
+                caption=f"{cookies_status} <b>تم التحميل باستخدام الكوكيات</b>\n"
+                       f"ᏟᎻᎪΝΝᎬᏞ 𓏺 @{config.CH_US}\n"
+                       f"▰ <b>الحجم:</b> {format_size(file_size)}\n"
+                       f"▰ <b>المدة:</b> {format_duration(dur)}",
                 title=title,
                 performer="YouTube",
                 thumb=thumb_name if thumb_name and os.path.exists(thumb_name) else None,
@@ -360,7 +392,11 @@ async def song_downloader(client, message: Message):
                 part_size = os.path.getsize(part_file)
                 await message.reply_audio(
                     audio=part_file,
-                    caption=f"ᏟᎻᎪΝΝᎬᏞ 𓏺 @{config.CH_US}\n▰ <b>الجزء {i+1}/{len(audio_files)}</b>\n▰ <b>الحجم:</b> {format_size(part_size)}",
+                    caption=f"{cookies_status} <b>تم التحميل باستخدام الكوكيات</b>\n"
+                           f"ᏟᎻᎪΝΝᎬᏞ 𓏺 @{config.CH_US}\n"
+                           f"▰ <b>الجزء {i+1}/{len(audio_files)}</b>\n"
+                           f"▰ <b>الحجم:</b> {format_size(part_size)}\n"
+                           f"▰ <b>المدة:</b> {format_duration(dur)}",
                     title=f"{title} - الجزء {i+1}",
                     performer="YouTube",
                     thumb=thumb_name if thumb_name and os.path.exists(thumb_name) else None,
@@ -384,3 +420,29 @@ async def song_downloader(client, message: Message):
                 remove_if_exists(thumb_name)
         except Exception as e:
             print("Cleanup error:", e)
+
+# أمر لفحص حالة الكوكيات
+@app.on_message(command(["كوكيات", "cookies"]))
+async def check_cookies(client, message: Message):
+    """فحص حالة ملف الكوكيات"""
+    cookies_file = get_cookies_file()
+    
+    if cookies_file:
+        file_size = os.path.getsize(cookies_file)
+        status_msg = (
+            f"✅ <b>ملف الكوكيات موجود</b>\n"
+            f"▰ <b>المسار:</b> <code>{cookies_file}</code>\n"
+            f"▰ <b>الحجم:</b> {format_size(file_size)}\n"
+            f"▰ <b>الحالة:</b> جاهز للاستخدام 🔐"
+        )
+    else:
+        status_msg = (
+            "❌ <b>ملف الكوكيات غير موجود</b>\n\n"
+            "📁 <b>لإعداد الكوكيات:</b>\n"
+            "1. أنشئ مجلد <code>cookies</code>\n"
+            "2. ضع ملف <code>cookies.txt</code> بداخله\n"
+            "3. تأكد من صحة تنسيق الملف\n"
+            "4. أعد تشغيل البوت"
+        )
+    
+    await message.reply_text(status_msg)
