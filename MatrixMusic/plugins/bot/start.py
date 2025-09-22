@@ -20,7 +20,7 @@ async def start_pm(client, message: Message, _):
     await add_served_user(message.from_user.id)
     await message.reply_photo(
         photo='MatrixMusic/plugins/bot/matrix.png',
-        caption=_["start_1"].format(app.mention),
+        caption=_["start_2"].format(app.mention),
         reply_markup=InlineKeyboardMarkup(start_panel(_)),
         reply_to_message_id=message.id
     )
@@ -38,3 +38,4 @@ async def start_gp(client, message: Message, _):
         reply_to_message_id=message.id
     )
     await add_served_chat(message.chat.id)
+
