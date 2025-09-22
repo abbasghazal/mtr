@@ -25,7 +25,7 @@ from MatrixMusic.utils.inline import (
     slider_markup,
     track_markup,
 )
-from MatrixMusic.utils.logger import play_logs
+#from MatrixMusic.utils.logger import play_logs
 from MatrixMusic.utils.stream.stream import stream
 from config import BANNED_USERS, lyrical
 
@@ -669,4 +669,5 @@ async def slider_queries(client, CallbackQuery, _):
         return await CallbackQuery.edit_message_media(
             media=med, reply_markup=InlineKeyboardMarkup(buttons)
         )
+
 
