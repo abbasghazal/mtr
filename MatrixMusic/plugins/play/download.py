@@ -44,8 +44,11 @@ def cookie_txt_file():
             return None
         
         cookie_txt_file = random.choice(txt_files)
-        with open(filename, 'a') as file:
-            file.write(f'Choosen File : {cookie_txt_file}\n')
+        
+        # سجل الملف المستخدم فقط إذا كان المسار موجوداً
+        if os.path.exists(filename):
+            with open(filename, 'a') as file:
+                file.write(f'Choosen File : {cookie_txt_file}\n')
         
         return f"cookies/{os.path.basename(cookie_txt_file)}"
     
@@ -126,9 +129,11 @@ async def download_audio_with_progress(link, title, message, m):
             'quiet': False,
             'no_warnings': False,
             'cookiefile': cookies_file if cookies_file else None,
-            'concurrent_fragment_downloads': 8,   # تحميل متوازي
-            'http_chunk_size': 10485760,          # 10MB لكل جزء
+            'concurrent_fragment_downloads': 8,
+            'http_chunk_size': 10485760,
             'progress_hooks': [lambda d: progress_hook(d, message, m)],
+            # إضافة هذا السطر لمنع مشكلة proxies
+            'proxy': ''
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -193,25 +198,22 @@ async def update_progress_message(m, progress_msg):
     """تحديث رسالة التقدم مع تجنب التحميل الزائد"""
     try:
         await m.edit(progress_msg)
-        await asyncio.sleep(5)  # الانتظار 5 ثواني قبل التحديث التالي
+        await asyncio.sleep(5)
     except Exception as e:
         print(f"Update progress error: {e}")
 
-async def split_large_audio(audio_file, max_size=950*1024*1024):  # 950MB للسلامة
+async def split_large_audio(audio_file, max_size=950*1024*1024):
     """تقسيم الملفات الكبيرة إلى أجزاء"""
     try:
         file_size = os.path.getsize(audio_file)
         if file_size <= max_size:
-            return [audio_file]  # لا حاجة للتقسيم
+            return [audio_file]
         
-        # استخدام ffmpeg لتقسيم الملف
         import subprocess
         
-        # الحصول على مدة الملف
         cmd = f'ffprobe -i "{audio_file}" -show_entries format=duration -v quiet -of csv="p=0"'
         duration = float(subprocess.check_output(cmd, shell=True).decode().strip())
         
-        # حساب عدد الأجزاء المطلوبة
         num_parts = math.ceil(file_size / max_size)
         part_duration = duration / num_parts
         
@@ -230,7 +232,7 @@ async def split_large_audio(audio_file, max_size=950*1024*1024):  # 950MB للس
         
     except Exception as e:
         print(f"Split audio error: {e}")
-        return [audio_file]  # العودة إلى الملف الأصلي في حالة الخطأ
+        return [audio_file]
 
 @app.on_message(command(["يوت", "نزل", "بحث"]))
 async def song_downloader(client, message: Message):
@@ -242,24 +244,53 @@ async def song_downloader(client, message: Message):
     m = await message.reply_text("<b>⇜ جـارِ البحث ..</b>")
 
     try:
-        # البحث
-        videos_search = VideosSearch(query, limit=1)
-        results = videos_search.result()
-        
-        if not results or not results['result']:
-            await m.edit("⚠️ ماكو نتائج للبحث")
-            return
+        # البحث بطريقة بديلة إذا فشلت الطريقة العادية
+        try:
+            videos_search = VideosSearch(query, limit=1)
+            results = videos_search.result()
+            
+            if not results or not results['result']:
+                await m.edit("⚠️ ماكو نتائج للبحث")
+                return
 
-        result = results['result'][0]
-        title_raw = result["title"]
-        title = re.sub(r'[\\/*?:"<>|]', "", title_raw)[:40]
-        link = result["link"]
-        thumbnail = result["thumbnails"][0]["url"]
-        duration = result.get("duration", "0:00")
+            result = results['result'][0]
+            title_raw = result["title"]
+            title = re.sub(r'[\\/*?:"<>|]', "", title_raw)[:40]
+            link = result["link"]
+            thumbnail = result["thumbnails"][0]["url"]
+            duration = result.get("duration", "0:00")
+            
+        except Exception as search_error:
+            print(f"Search error: {search_error}")
+            # طريقة بديلة للبحث
+            search_url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            
+            response = requests.get(search_url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                await m.edit("⚠️ فشل في البحث")
+                return
+            
+            video_ids = re.findall(r'watch\?v=(\S{11})', response.text)
+            if not video_ids:
+                await m.edit("⚠️ ماكو نتائج للبحث")
+                return
+            
+            link = f"https://www.youtube.com/watch?v={video_ids[0]}"
+            
+            # الحصول على معلومات الفيديو
+            ydl_opts = {'quiet': True, 'proxy': ''}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(link, download=False)
+                title = re.sub(r'[\\/*?:"<>|]', "", info.get('title', 'Unknown'))[:40]
+                thumbnail = info.get('thumbnail', '')
+                duration = info.get('duration', 0)
 
-        # التحقق من الحجم (حتى 2GB مسموح)
+        # التحقق من الحجم
         file_size = await check_file_size(link)
-        if file_size and file_size > 2 * 1024 * 1024 * 1024:  # 2GB
+        if file_size and file_size > 2 * 1024 * 1024 * 1024:
             await m.edit("⚠️ حجم الملف كبير جداً (أكثر من 2GB)")
             return
 
@@ -289,7 +320,6 @@ async def song_downloader(client, message: Message):
         file_size = os.path.getsize(audio_file)
         file_size_mb = file_size / (1024 * 1024)
         
-        # تقسيم الملف إذا كان أكبر من 950MB
         audio_files = await split_large_audio(audio_file)
         
     except Exception as e:
@@ -299,19 +329,21 @@ async def song_downloader(client, message: Message):
     # حساب المدة
     try:
         dur = 0
-        if duration and ":" in duration:
-            dur_arr = duration.split(":")
-            secmul = 1
-            for i in range(len(dur_arr) - 1, -1, -1):
-                dur += int(float(dur_arr[i])) * secmul
-                secmul *= 60
+        if duration and ":" in str(duration):
+            if isinstance(duration, str):
+                dur_arr = duration.split(":")
+                secmul = 1
+                for i in range(len(dur_arr) - 1, -1, -1):
+                    dur += int(float(dur_arr[i])) * secmul
+                    secmul *= 60
+            else:
+                dur = int(duration)
     except:
         dur = 0
 
     # إرسال الملف/الملفات
     try:
         if len(audio_files) == 1:
-            # ملف واحد
             await message.reply_audio(
                 audio=audio_files[0],
                 caption=f"ᏟᎻᎪΝΝᎬᏞ 𓏺 @{config.CH_US}\n▰ <b>الحجم:</b> {format_size(file_size)}",
@@ -321,11 +353,9 @@ async def song_downloader(client, message: Message):
                 duration=dur,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton(text="• 𝐒𝐨𝐮𝐫𝐜𝐞 •", url="https://t.me/shahmplus")],
-                    
                 ]),
             )
         else:
-            # ملفات متعددة
             for i, part_file in enumerate(audio_files):
                 part_size = os.path.getsize(part_file)
                 await message.reply_audio(
@@ -336,7 +366,6 @@ async def song_downloader(client, message: Message):
                     thumb=thumb_name if thumb_name and os.path.exists(thumb_name) else None,
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton(text="• 𝐒𝐨𝐮𝐫𝐜𝐞 •", url="https://t.me/shahmplus")],
-                        
                     ]),
                 )
         
