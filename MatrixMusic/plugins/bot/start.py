@@ -15,7 +15,6 @@ from strings import get_string
 from subscription import require_subscription
 
 @app.on_message(filters.command(["start"]) & filters.private & ~BANNED_USERS)
-@require_subscription
 @LanguageStart
 async def start_pm(client, message: Message, _):
     await add_served_user(message.from_user.id)
@@ -75,4 +74,5 @@ async def start_gp(client, message: Message, _):
         reply_markup=InlineKeyboardMarkup(out),
     )
     return await add_served_chat(message.chat.id)
+
 
