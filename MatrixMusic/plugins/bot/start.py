@@ -44,14 +44,17 @@ def private_panel(_):
     buttons = [
         [
             InlineKeyboardButton(
-                text=_["S_B_3"],
-                url=f"https://t.me/{app.username}?startgroup=true",
+                text="• تنصيب نفس البوت •",
+                url="https://t.me/shahmplus/88",
             )
         ],
-        [InlineKeyboardButton(text=_["S_B_4"], callback_data="zzzback")],
         [
-            InlineKeyboardButton(text=_["S_B_6"], url="https://t.me/Shahmplus"),
+            InlineKeyboardButton(text="• uPDatE •", url="https://t.me/shahmplus"),
+            InlineKeyboardButton(text="• DevloPeRs • ", url="https://t.me/shahm41"),
         ],
+        [
+            InlineKeyboardButton(text=" • aDD Me To Your Groups •", url= f"https://t.me/{app.username}?startgroup=true") 
+            ], 
     ]
     return buttons
 
@@ -124,3 +127,4 @@ async def start_gp(client, message: Message, _):
         reply_markup=InlineKeyboardMarkup(out),
     )
     return await add_served_chat(message.chat.id)
+
