@@ -18,8 +18,8 @@ from MatrixMusic.plugins.play.filters import command
 def remove_if_exists(path):
     if os.path.exists(path):
         os.remove(path)
-channel = config.CHANNEL_SUDO              
-lnk = config.CHANNEL_LINK
+channel = config.CHANNEL_NAME             
+lnk = config.CH_US
 Nem = config.BOT_NAME + " ابحث"
 @app.on_message(command(["يوت", "نزل", "بحث", Nem]))
 async def song_downloader(client, message: Message):
@@ -92,4 +92,5 @@ async def song_downloader(client, message: Message):
         remove_if_exists(thumb_name)
     except Exception as e:
         print(e)
+
 
