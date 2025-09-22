@@ -1,20 +1,35 @@
+#▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒✯ ʑᴇʟᴢᴀʟ_ᴍᴜsɪᴄ ✯▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+#▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒✯  T.me/ZThon   ✯▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+#▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒✯ T.me/ZThon_Music ✯▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+
 import time
+
 from pyrogram import filters
+from pyrogram.enums import ChatType
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from youtubesearchpython.__future__ import VideosSearch
+
 import config
 from MatrixMusic import app
 from MatrixMusic.misc import _boot_
 from MatrixMusic.plugins.sudo.sudoers import sudoers_list
-from MatrixMusic.utils.database import add_served_chat, add_served_user
+from MatrixMusic.utils.database import (
+    add_served_chat,
+    add_served_user,
+    blacklisted_chats,
+    get_lang,
+    is_banned_user,
+    is_on_off,
+)
 from MatrixMusic.utils.decorators.language import LanguageStart
 from MatrixMusic.utils.formatters import get_readable_time
 from MatrixMusic.utils.inline import help_pannel, private_panel, start_panel
 from config import BANNED_USERS
 from strings import get_string
-from subscription import require_subscription
+
 
 @app.on_message(filters.command(["start"]) & filters.private & ~BANNED_USERS)
+@LanguageStart
 async def start_pm(client, message: Message, _):
     await add_served_user(message.from_user.id)
     if len(message.text.split()) > 1:
@@ -22,7 +37,7 @@ async def start_pm(client, message: Message, _):
         if name[0:4] == "help":
             keyboard = help_pannel(_)
             return await message.reply_photo(
-                photo="MatrixMusic/plugins/bot/matrix.png",
+                photo='MatrixMusic/plugins/bot/matrix.png',
                 caption=_["help_1"].format(config.SUPPORT_CHANNEL),
                 reply_markup=keyboard,
             )
@@ -61,18 +76,15 @@ async def start_pm(client, message: Message, _):
                 reply_markup=key,
             )
 
+
 @app.on_message(filters.command(["start"]) & filters.group & ~BANNED_USERS)
-@require_subscription
 @LanguageStart
 async def start_gp(client, message: Message, _):
     out = start_panel(_)
     uptime = int(time.time() - _boot_)
     await message.reply_photo(
-        photo="MatrixMusic/plugins/bot/matrix.png",
+        photo='MatrixMusic/plugins/bot/matrix.png',
         caption=_["start_1"].format(app.mention, get_readable_time(uptime)),
         reply_markup=InlineKeyboardMarkup(out),
     )
     return await add_served_chat(message.chat.id)
-
-
-
