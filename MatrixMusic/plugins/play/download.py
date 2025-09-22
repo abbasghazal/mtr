@@ -231,6 +231,84 @@ async def split_large_audio(audio_file, max_size=950*1024*1024):  # 950MB للس
         print(f"Split audio error: {e}")
         return [audio_file]  # العودة إلى الملف الأصلي في حالة الخطأ
 
+async def search_youtube(query):
+    """وظيفة محسنة للبحث في يوتيوب مع معالجة الأخطاء"""
+    try:
+        # خيارات yt-dlp للبحث
+        ydl_opts = {
+            'quiet': True,
+            'extract_flat': True,
+            'force_json': True,
+            'default_search': 'ytsearch10',  # البحث عن 10 نتائج لزيادة الفرص
+            'socket_timeout': 30,
+            'source_address': '0.0.0.0',
+        }
+        
+        # محاولة البحث مع إعدادات مختلفة
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=False)
+            
+        # التحقق من وجود نتائج
+        if not info or 'entries' not in info or not info['entries']:
+            # محاولة بديلة باستخدام البحث المباشر
+            try:
+                search_url = f"https://www.youtube.com/results?search_query={requests.utils.quote(query)}"
+                response = requests.get(search_url, timeout=10)
+                
+                # البحث عن فيديو ID في النتائج
+                video_ids = re.findall(r'watch\?v=(\S{11})', response.text)
+                if video_ids:
+                    link = f"https://www.youtube.com/watch?v={video_ids[0]}"
+                    # الحصول على معلومات الفيديو
+                    with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                        video_info = ydl.extract_info(link, download=False)
+                    
+                    return {
+                        'title': video_info.get('title', query),
+                        'link': link,
+                        'thumbnail': video_info.get('thumbnail', ''),
+                        'duration': video_info.get('duration', 0)
+                    }
+            except:
+                return None
+            
+            return None
+        
+        # العثور على أول نتيجة صالحة
+        for entry in info['entries']:
+            if entry and 'url' in entry and entry['url'].startswith('https://'):
+                return {
+                    'title': entry.get('title', query),
+                    'link': entry['url'],
+                    'thumbnail': entry.get('thumbnail', ''),
+                    'duration': entry.get('duration', 0)
+                }
+        
+        return None
+        
+    except Exception as e:
+        print(f"Search error: {e}")
+        # محاولة أخيرة باستخدام البحث البسيط
+        try:
+            search_query = query.replace(' ', '+')
+            search_url = f"https://www.youtube.com/results?search_query={search_query}"
+            response = requests.get(search_url, timeout=15)
+            
+            # استخراج أول فيديو من النتائج
+            match = re.search(r'watch\?v=(\S{11})', response.text)
+            if match:
+                video_id = match.group(1)
+                return {
+                    'title': query,
+                    'link': f"https://www.youtube.com/watch?v={video_id}",
+                    'thumbnail': f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                    'duration': 0
+                }
+        except:
+            return None
+        
+        return None
+
 @app.on_message(command(["يوت", "نزل", "بحث"]))
 async def song_downloader(client, message: Message):
     if len(message.command) < 2:
@@ -241,27 +319,20 @@ async def song_downloader(client, message: Message):
     m = await message.reply_text("<b>⇜ جـارِ البحث ..</b>")
 
     try:
-        # البحث باستخدام yt-dlp بدلاً من youtubesearchpython
-        ydl_opts = {
-            'quiet': True,
-            'extract_flat': True,
-            'force_json': True,
-            'default_search': 'ytsearch1',
-        }
+        # البحث باستخدام الوظيفة المحسنة
+        result = await search_youtube(query)
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=False)
-            
-        if not info or 'entries' not in info or not info['entries']:
-            await m.edit("⚠️ ماكو نتائج للبحث")
+        if not result:
+            await m.edit("⚠️ عذراً، لم أتمكن من العثور على نتائج للبحث\nيرجى المحاولة بكلمات بحث مختلفة أو التأكد من اتصال الإنترنت")
             return
             
-        result = info['entries'][0]
         title_raw = result["title"]
         title = re.sub(r'[\\/*?:"<>|]', "", title_raw)[:40]
-        link = result["url"]
+        link = result["link"]
         thumbnail = result.get("thumbnail", "")
         duration = result.get("duration", 0)
+
+        await m.edit("<b>⇜ جـارِ التحقق من الحجم ..</b>")
 
         # التحقق من الحجم (حتى 2GB مسموح)
         file_size = await check_file_size(link)
@@ -273,16 +344,19 @@ async def song_downloader(client, message: Message):
         thumb_name = None
         try:
             if thumbnail:
-                thumb_response = requests.get(thumbnail, timeout=10)
+                thumb_response = requests.get(thumbnail, timeout=15)
                 thumb_response.raise_for_status()
                 thumb_name = f"{title}.jpg"
                 with open(thumb_name, "wb") as f:
                     f.write(thumb_response.content)
-        except:
+        except Exception as thumb_error:
+            print(f"Thumbnail error: {thumb_error}")
             thumb_name = None
 
+        await m.edit("<b>⇜ جـارِ التحميل ..</b>")
+
     except Exception as e:
-        await m.edit(f"⚠️ خطأ أثناء البحث:\n<code>{str(e)}</code>")
+        await m.edit(f"⚠️ خطأ أثناء البحث:\n<code>{str(e)[:500]}</code>")
         return
 
     # تحميل الملف الصوتي
@@ -294,7 +368,6 @@ async def song_downloader(client, message: Message):
     # التحقق من حجم الملف المحمل
     try:
         file_size = os.path.getsize(audio_file)
-        file_size_mb = file_size / (1024 * 1024)
         
         # تقسيم الملف إذا كان أكبر من 950MB
         audio_files = await split_large_audio(audio_file)
@@ -305,11 +378,8 @@ async def song_downloader(client, message: Message):
 
     # حساب المدة
     try:
-        # تحويل المدة من ثواني إلى تنسيق MM:SS
-        if isinstance(duration, (int, float)):
-            minutes = int(duration // 60)
-            seconds = int(duration % 60)
-            dur = minutes * 60 + seconds
+        if isinstance(duration, (int, float)) and duration > 0:
+            dur = int(duration)
         else:
             dur = 0
     except:
@@ -321,14 +391,13 @@ async def song_downloader(client, message: Message):
             # ملف واحد
             await message.reply_audio(
                 audio=audio_files[0],
-                caption=f"ᏟᎻᎪΝΝᎬᏞ 𓏺 @{config.CH_US}\n▰ <b>الحجم:</b> {format_size(file_size)}",
+                caption=f"ᏟᎻᎪΝΝᎬᏞ 𓏺 @{config.CH_US}\n▰ <b>الحجم:</b> {format_size(file_size)}\n▰ <b>العنوان:</b> {title_raw}",
                 title=title,
                 performer="YouTube",
                 thumb=thumb_name if thumb_name and os.path.exists(thumb_name) else None,
                 duration=dur,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton(text="• 𝐒𝐨𝐮𝐫𝐜𝐞 •", url="https://t.me/shahmplus")],
-                    
                 ]),
             )
         else:
@@ -337,20 +406,19 @@ async def song_downloader(client, message: Message):
                 part_size = os.path.getsize(part_file)
                 await message.reply_audio(
                     audio=part_file,
-                    caption=f"ᏟᎻᎪΝΝᎬᏞ 𓏺 @{config.CH_US}\n▰ <b>الجزء {i+1}/{len(audio_files)}</b>\n▰ <b>الحجم:</b> {format_size(part_size)}",
+                    caption=f"ᏟᎻᎪΝΝᎬᏞ 𓏺 @{config.CH_US}\n▰ <b>الجزء {i+1}/{len(audio_files)}</b>\n▰ <b>الحجم:</b> {format_size(part_size)}\n▰ <b>العنوان:</b> {title_raw}",
                     title=f"{title} - الجزء {i+1}",
                     performer="YouTube",
                     thumb=thumb_name if thumb_name and os.path.exists(thumb_name) else None,
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton(text="• 𝐒𝐨𝐮𝐫𝐜𝐞 •", url="https://t.me/shahmplus")],
-                        
                     ]),
                 )
         
         await m.delete()
         
     except Exception as e:
-        await m.edit(f"⚠️ خطأ أثناء الرفع:\n<code>{str(e)}</code>")
+        await m.edit(f"⚠️ خطأ أثناء الرفع:\n<code>{str(e)[:500]}</code>")
 
     # التنظيف
     finally:
